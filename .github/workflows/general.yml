@@ -1,0 +1,90 @@
+name: Rust
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: clippy
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: -- -D warnings
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Get Rust Version
+        id: rust
+        run: echo "::set-output name=VERSION::$(cargo -V | head -n1 | awk '{print $2}')"
+      - name: Get Tarpaulin Version
+        id: tarpaulin
+        run: echo "::set-output name=version::$(wget -qO- 'https://crates.io/api/v1/crates/cargo-tarpaulin' | jq -r '.crate.max_stable_version')"
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tarpaulin
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{runner.os}}-cargo-${{steps.rust.outputs.version}}-tarpaulin-${{steps.tarpaulin.outputs.version}}
+      - name: Install Tarpaulin
+        run: test -e ~/.cargo/bin/cargo-tarpaulin || cargo install cargo-tarpaulin --version ${{steps.tarpaulin.outputs.version }}
+      - name: Run Tarpaulin coverage tests
+        run: |
+          cargo tarpaulin -v \
+            --target-dir target/tarpaulin \
+            --exclude-files 'target/*' \
+            --ignore-panics \
+            --ignore-tests \
+            --out Html \
+            --out Json
+        env:
+          RUST_BACKTRACE: 1
+      - uses: actions/upload-artifact@v3
+        with:
+          name: tarpaulin-report
+          path: |
+            tarpaulin-report.json
+            tarpaulin-report.html
